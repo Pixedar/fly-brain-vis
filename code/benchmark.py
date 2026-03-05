@@ -38,13 +38,66 @@ path_res = (current_dir / '../data/results').resolve()
 path_wt = (current_dir / '../data').resolve()
 csv_path = (current_dir / '../data/benchmark-results.csv').resolve()
 
-# Neuron IDs to excite (P9s for forward walking)
-P9_left = 720575940627652358
-P9_right = 720575940635872101
-neu_exc = [P9_left, P9_right]
-neu_exc2 = []
-neu_slnc = []
-STIM_RATE = 100.0  # Hz
+# ============================================================================
+# Experiment Definitions
+# ============================================================================
+
+EXPERIMENTS = {
+    'sugar': {
+        'key': 'sugar',
+        'name': 'Sugar GRNs (200 Hz)',
+        'neu_exc': [
+            720575940624963786,
+            720575940630233916,
+            720575940637568838,
+            720575940638202345,
+            720575940617000768,
+            720575940630797113,
+            720575940632889389,
+            720575940621754367,
+            720575940621502051,
+            720575940640649691,
+            720575940639332736,
+            720575940616885538,
+            720575940639198653,
+            720575940639259967,
+            720575940617937543,
+            720575940632425919,
+            720575940633143833,
+            720575940612670570,
+            720575940628853239,
+            720575940629176663,
+            720575940611875570,
+        ],
+        'neu_exc2': [],
+        'neu_slnc': [],
+        'stim_rate': 200.0,
+    },
+    'p9': {
+        'key': 'p9',
+        'name': 'P9s forward walking (100 Hz)',
+        'neu_exc': [
+            720575940627652358,  # P9 left
+            720575940635872101,  # P9 right
+        ],
+        'neu_exc2': [],
+        'neu_slnc': [],
+        'stim_rate': 100.0,
+    },
+}
+
+DEFAULT_EXPERIMENT = 'sugar'
+
+
+def get_experiment(name=None):
+    """Return experiment config dict by name (default: sugar)."""
+    name = name or DEFAULT_EXPERIMENT
+    if name not in EXPERIMENTS:
+        raise ValueError(
+            f"Unknown experiment '{name}'. "
+            f"Available: {list(EXPERIMENTS.keys())}"
+        )
+    return EXPERIMENTS[name]
 
 # ============================================================================
 # Logging Utilities
@@ -85,7 +138,7 @@ class BenchmarkLogger:
 CSV_COLUMNS = [
     'framework', 'n_run', 't_run',
     'setup_time', 'build_time', 'sim_time', 'total_time',
-    'rt_ratio', 'spikes', 'active_neurons', 'status', 'timestamp',
+    'realtime_ratio', 'spikes', 'active_neurons', 'status', 'timestamp',
 ]
 
 
@@ -108,7 +161,7 @@ def save_result_csv(backend_name, result):
         'build_time': round(t.get('device_build', 0), 3),
         'sim_time': round(t.get('simulation_total', 0), 3),
         'total_time': round(t.get('total_elapsed', 0), 3),
-        'rt_ratio': round(t.get('realtime_ratio', 0), 4),
+        'realtime_ratio': round(t.get('realtime_ratio', 0), 4),
         'spikes': result.get('n_spikes', 0),
         'active_neurons': result.get('n_active_neurons', 0),
         'status': result.get('status', 'unknown'),
@@ -172,7 +225,7 @@ def print_summary_table(all_results, backend_name, logger):
         build_time = t.get('device_build', 0)
         sim_time = t.get('simulation_total', 0)
         total_time = t.get('total_elapsed', 0)
-        rt_ratio = t.get('realtime_ratio', 0)
+        realtime_ratio = t.get('realtime_ratio', 0)
 
         logger.log_raw(
             f"{result['t_run_sec']:>7.1f}s | "
@@ -181,7 +234,7 @@ def print_summary_table(all_results, backend_name, logger):
             f"{build_time:>9.2f}s | "
             f"{sim_time:>11.2f}s | "
             f"{total_time:>9.2f}s | "
-            f"{rt_ratio:>9.3f}x | "
+            f"{realtime_ratio:>9.3f}x | "
             f"{result['n_spikes']:>10d} | "
             f"{status_icon} {result['status']}"
         )
@@ -202,7 +255,8 @@ BACKEND_NAMES = {
 }
 
 
-def run_benchmarks(backends, t_run_values=None, n_run_values=None, logger=None):
+def run_benchmarks(backends, t_run_values=None, n_run_values=None,
+                   experiment=None, logger=None):
     """
     Run benchmarks for the specified backends.
 
@@ -210,13 +264,21 @@ def run_benchmarks(backends, t_run_values=None, n_run_values=None, logger=None):
         backends: list of backend keys ('cpu', 'gpu', 'pytorch', 'nestgpu')
         t_run_values: list of t_run durations in seconds, or None for all
         n_run_values: list of n_run values, or None for N_RUN_VALUES
+        experiment: experiment config dict from get_experiment()
         logger: BenchmarkLogger instance
 
     Returns:
         dict mapping backend key to list of result dicts
     """
+    if experiment is None:
+        experiment = get_experiment()
+
     all_results = {}
     total_backends = len(backends)
+
+    logger.log(f"Experiment: {experiment['name']}")
+    logger.log(f"Stimulated neurons: {len(experiment['neu_exc'])} "
+               f"at {experiment['stim_rate']} Hz")
 
     for bi, backend in enumerate(backends, 1):
         logger.log_raw("")
@@ -231,6 +293,7 @@ def run_benchmarks(backends, t_run_values=None, n_run_values=None, logger=None):
                 use_cuda=(backend == 'gpu'),
                 t_run_values=t_run_values,
                 n_run_values=n_run_values,
+                experiment=experiment,
                 logger=logger,
             )
             all_results[backend] = results
@@ -240,6 +303,7 @@ def run_benchmarks(backends, t_run_values=None, n_run_values=None, logger=None):
             results = run_torch(
                 t_run_values=t_run_values,
                 n_run_values=n_run_values,
+                experiment=experiment,
                 logger=logger,
             )
             all_results[backend] = results
@@ -249,6 +313,7 @@ def run_benchmarks(backends, t_run_values=None, n_run_values=None, logger=None):
             results = run_nest(
                 t_run_values=t_run_values,
                 n_run_values=n_run_values,
+                experiment=experiment,
                 logger=logger,
             )
             all_results[backend] = results

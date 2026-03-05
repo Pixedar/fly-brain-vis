@@ -2,8 +2,11 @@
 Drosophila brain model benchmark runner.
 
 Usage:
-    # All backends, default durations and trials
+    # All backends, default experiment (Sugar GRNs 200 Hz)
     python main.py
+
+    # P9 forward-walking experiment instead
+    python main.py --experiment p9
 
     # Specific durations and trial count
     python main.py --t_run 0.1 1 10 --n_run 1
@@ -32,7 +35,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'code'))
 
 from benchmark import (
-    BenchmarkLogger, T_RUN_VALUES_SEC, BACKEND_NAMES, run_benchmarks,
+    BenchmarkLogger, T_RUN_VALUES_SEC, BACKEND_NAMES, EXPERIMENTS,
+    get_experiment, run_benchmarks,
 )
 
 
@@ -47,6 +51,12 @@ def main():
                         help='Log file path. Default: data/results/benchmarks.log')
     parser.add_argument('--no_log_file', action='store_true',
                         help='Disable file logging (console only)')
+
+    parser.add_argument('--experiment', type=str, default=None,
+                        choices=list(EXPERIMENTS.keys()),
+                        help='Experiment to run. '
+                             f'Available: {list(EXPERIMENTS.keys())}. '
+                             'Default: sugar')
 
     parser.add_argument('--brian2-cpu', action='store_true',
                         help='Run Brian2 C++ standalone (CPU)')
@@ -88,6 +98,8 @@ def main():
                 )
                 return
 
+    experiment = get_experiment(args.experiment)
+
     log_file = None if args.no_log_file else args.log_file
     logger = BenchmarkLogger(log_file=log_file)
 
@@ -106,6 +118,7 @@ def main():
             backends=backends,
             t_run_values=t_run_values,
             n_run_values=args.n_run,
+            experiment=experiment,
             logger=logger,
         )
 

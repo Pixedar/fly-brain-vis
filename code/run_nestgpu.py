@@ -23,8 +23,7 @@ import traceback
 from benchmark import (
     T_RUN_VALUES_SEC, N_RUN_VALUES,
     path_comp, path_con, path_res,
-    neu_exc, neu_exc2, neu_slnc, STIM_RATE,
-    print_summary_table, save_result_csv,
+    get_experiment, print_summary_table, save_result_csv,
 )
 
 # ============================================================================
@@ -45,7 +44,6 @@ MODEL_PARAMS = {
     't_rfc': 2.2,     # ms  refractory period
     't_dly': 1.8,     # ms  synaptic delay
     'w_syn': 0.275,   # mV  weight per synapse
-    'r_poi': STIM_RATE,  # Hz  Poisson rate (100 Hz, matching Brian2/PyTorch)
     'f_poi': 250,     # Poisson weight scaling factor
 }
 
@@ -53,16 +51,19 @@ MODEL_PARAMS = {
 # Worker: runs a single NEST GPU trial (called via subprocess)
 # ============================================================================
 
-def _run_worker_trial(t_run_sec, trial_num):
+def _run_worker_trial(t_run_sec, trial_num, experiment_name=None):
     """Build network, simulate, and return timing + spike counts as dict.
 
     Imports nestgpu only here so the main orchestrator process never loads it.
     """
     import nestgpu as ngpu
 
+    experiment = get_experiment(experiment_name)
+
     t_run_ms = t_run_sec * 1000
     n_max_spikes = N_MAX_SPIKE_TIMES.get(t_run_sec, 4000)
-    params = MODEL_PARAMS
+    params = dict(MODEL_PARAMS)
+    params['r_poi'] = experiment['stim_rate']
 
     result = {
         'trial': trial_num,
@@ -82,9 +83,9 @@ def _run_worker_trial(t_run_sec, trial_num):
         # ---- ID mappings ----
         df_comp = pd.read_csv(str(path_comp), index_col=0)
         flyid2i = {j: i for i, j in enumerate(df_comp.index)}
-        exc = [flyid2i[n] for n in neu_exc]
-        exc2 = [flyid2i[n] for n in neu_exc2]
-        slnc = [flyid2i[n] for n in neu_slnc]
+        exc = [flyid2i[n] for n in experiment['neu_exc']]
+        exc2 = [flyid2i[n] for n in experiment['neu_exc2']]
+        slnc = [flyid2i[n] for n in experiment['neu_slnc']]
 
         # ---- Network creation ----
         net_start = time()
@@ -165,7 +166,8 @@ def _run_worker_trial(t_run_sec, trial_num):
 # Orchestrator: spawns subprocess per trial, aggregates results
 # ============================================================================
 
-def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None):
+def run_single_benchmark(t_run_sec, n_run, experiment, logger,
+                         run_idx=None, total_runs=None):
     """Run a NEST GPU benchmark by spawning one subprocess per trial."""
     exp_name = f'nestgpu_t{t_run_sec}s_n{n_run}'
 
@@ -177,6 +179,8 @@ def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None
     logger.log(f"Device: GPU (NEST GPU, user_m1 neuron)")
     logger.log(f"Experiment: {exp_name}")
     logger.log(f"Each trial runs in a separate subprocess (NEST GPU limitation)")
+
+    experiment_name = experiment['key']
 
     timings = {}
     trial_results = []
@@ -191,6 +195,7 @@ def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None
             cmd = [
                 sys.executable, worker_script,
                 '--worker', str(t_run_sec), str(trial),
+                '--experiment', experiment_name,
             ]
 
             t_trial_start = time()
@@ -333,19 +338,23 @@ def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None
     return results
 
 
-def run_all_benchmarks(t_run_values=None, n_run_values=None, logger=None):
+def run_all_benchmarks(t_run_values=None, n_run_values=None,
+                       experiment=None, logger=None):
     """
     Run all NEST GPU benchmark combinations.
 
     Args:
         t_run_values: List of t_run durations in seconds, or None for all
         n_run_values: List of n_run values to test, or None for all
+        experiment: experiment config dict from get_experiment()
         logger: BenchmarkLogger instance
     """
     if t_run_values is None:
         t_run_values = T_RUN_VALUES_SEC
     if n_run_values is None:
         n_run_values = N_RUN_VALUES
+    if experiment is None:
+        experiment = get_experiment()
 
     backend_name = 'NEST GPU'
 
@@ -372,6 +381,7 @@ def run_all_benchmarks(t_run_values=None, n_run_values=None, logger=None):
         result = run_single_benchmark(
             t_run_sec=t_run_sec,
             n_run=n_run,
+            experiment=experiment,
             logger=logger,
             run_idx=run_idx,
             total_runs=total_runs,
@@ -392,7 +402,12 @@ if __name__ == '__main__':
     if len(sys.argv) >= 4 and sys.argv[1] == '--worker':
         t_run_sec = float(sys.argv[2])
         trial_num = int(sys.argv[3])
-        result = _run_worker_trial(t_run_sec, trial_num)
+        exp_name = None
+        if '--experiment' in sys.argv:
+            exp_idx = sys.argv.index('--experiment')
+            if exp_idx + 1 < len(sys.argv):
+                exp_name = sys.argv[exp_idx + 1]
+        result = _run_worker_trial(t_run_sec, trial_num, exp_name)
         print(json.dumps(result), flush=True)
     else:
         print("This module is used as a worker subprocess by the benchmark system.")

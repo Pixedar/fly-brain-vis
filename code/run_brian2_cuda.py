@@ -29,8 +29,7 @@ from joblib import Parallel, delayed, parallel_backend
 from benchmark import (
     T_RUN_VALUES_SEC, N_RUN_VALUES,
     output_dir, path_comp, path_con, path_res,
-    neu_exc, neu_exc2, neu_slnc,
-    print_summary_table, save_result_csv,
+    get_experiment, print_summary_table, save_result_csv,
 )
 
 # ============================================================================
@@ -187,7 +186,7 @@ def silence_neurons(syn, slnc):
 # ============================================================================
 
 def _run_standalone_benchmark(t_run_sec, n_run, use_cuda, exc, exc2, slnc,
-                              i2flyid, logger, exp_name, timings):
+                              i2flyid, params, logger, exp_name, timings):
     """Run benchmark using Brian2 standalone mode (C++ or CUDA)."""
     from brian2 import device as brian_device
 
@@ -207,12 +206,12 @@ def _run_standalone_benchmark(t_run_sec, n_run, use_cuda, exc, exc2, slnc,
     t_network_start = time()
 
     neu, syn, spk_mon, _, network_timings = create_network(
-        path_comp, path_con, default_params, logger
+        path_comp, path_con, params, logger
     )
     timings.update(network_timings)
 
     t_poisson_start = time()
-    poi_inp = add_poisson_inputs(neu, exc, exc2, default_params)
+    poi_inp = add_poisson_inputs(neu, exc, exc2, params)
     timings['poisson_inputs'] = time() - t_poisson_start
 
     if slnc:
@@ -278,14 +277,14 @@ def _run_standalone_benchmark(t_run_sec, n_run, use_cuda, exc, exc2, slnc,
 # Benchmark: joblib-parallel path (CPU, n_run > 1)
 # ============================================================================
 
-def _run_parallel_benchmark(t_run_sec, n_run, exc, exc2, slnc, logger,
-                            exp_name, timings):
+def _run_parallel_benchmark(t_run_sec, n_run, exc, exc2, slnc, params,
+                            logger, exp_name, timings):
     """Run benchmark using joblib parallelization across CPU cores."""
     total_cores = os.cpu_count() or 1
     n_cores = max(1, total_cores - 4)
     t_run = t_run_sec * 1000 * ms
 
-    trial_params = dict(default_params)
+    trial_params = dict(params)
     trial_params['t_run'] = t_run
 
     timings['network_creation_total'] = 0.0
@@ -316,7 +315,7 @@ def _run_parallel_benchmark(t_run_sec, n_run, exc, exc2, slnc, logger,
 # Main benchmark entry point
 # ============================================================================
 
-def run_single_benchmark(t_run_sec, n_run, use_cuda, logger,
+def run_single_benchmark(t_run_sec, n_run, use_cuda, experiment, logger,
                          run_idx=None, total_runs=None):
     """Run a single Brian2 benchmark with specified t_run and n_run.
 
@@ -336,6 +335,9 @@ def run_single_benchmark(t_run_sec, n_run, use_cuda, logger,
                f"({'CUDA' if use_cuda else 'C++'})")
     logger.log(f"Experiment: {exp_name}")
 
+    params = dict(default_params)
+    params['r_poi'] = experiment['stim_rate'] * Hz
+
     timings = {}
     results = {}
 
@@ -345,9 +347,9 @@ def run_single_benchmark(t_run_sec, n_run, use_cuda, logger,
         df_comp = pd.read_csv(path_comp, index_col=0)
         flyid2i = {j: i for i, j in enumerate(df_comp.index)}
         i2flyid = {j: i for i, j in flyid2i.items()}
-        exc = [flyid2i[n] for n in neu_exc]
-        exc2 = [flyid2i[n] for n in neu_exc2]
-        slnc = [flyid2i[n] for n in neu_slnc]
+        exc = [flyid2i[n] for n in experiment['neu_exc']]
+        exc2 = [flyid2i[n] for n in experiment['neu_exc2']]
+        slnc = [flyid2i[n] for n in experiment['neu_slnc']]
         timings['id_mapping'] = time() - t_mapping_start
         logger.log(f"ID mapping:         {timings['id_mapping']:.3f}s")
 
@@ -356,12 +358,13 @@ def run_single_benchmark(t_run_sec, n_run, use_cuda, logger,
 
         if use_parallel:
             simulation_results, timings = _run_parallel_benchmark(
-                t_run_sec, n_run, exc, exc2, slnc, logger, exp_name, timings
+                t_run_sec, n_run, exc, exc2, slnc, params,
+                logger, exp_name, timings
             )
         else:
             simulation_results, timings = _run_standalone_benchmark(
                 t_run_sec, n_run, use_cuda, exc, exc2, slnc, i2flyid,
-                logger, exp_name, timings
+                params, logger, exp_name, timings
             )
 
         # ===== Collect and save results =====
@@ -466,12 +469,14 @@ def run_single_benchmark(t_run_sec, n_run, use_cuda, logger,
 
 
 def run_all_benchmarks(use_cuda, t_run_values=None, n_run_values=None,
-                       logger=None):
+                       experiment=None, logger=None):
     """Run all Brian2/Brian2CUDA benchmark combinations."""
     if t_run_values is None:
         t_run_values = T_RUN_VALUES_SEC
     if n_run_values is None:
         n_run_values = N_RUN_VALUES
+    if experiment is None:
+        experiment = get_experiment()
 
     backend_name = 'Brian2CUDA (GPU)' if use_cuda else 'Brian2 (CPU)'
     device_label = 'GPU (CUDA)' if use_cuda else 'CPU (C++)'
@@ -500,6 +505,7 @@ def run_all_benchmarks(use_cuda, t_run_values=None, n_run_values=None,
             t_run_sec=t_run_sec,
             n_run=n_run,
             use_cuda=use_cuda,
+            experiment=experiment,
             logger=logger,
             run_idx=run_idx,
             total_runs=total_runs,

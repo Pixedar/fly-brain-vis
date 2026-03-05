@@ -25,8 +25,7 @@ import traceback
 from benchmark import (
     T_RUN_VALUES_SEC, N_RUN_VALUES,
     path_comp, path_con, path_res, path_wt,
-    neu_exc, STIM_RATE,
-    print_summary_table, save_result_csv,
+    get_experiment, print_summary_table, save_result_csv,
 )
 
 # ============================================================================
@@ -249,7 +248,8 @@ def get_weights(conn_path, comp_path, wt_dir, csr=True):
 # Benchmark Functions
 # ============================================================================
 
-def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None):
+def run_single_benchmark(t_run_sec, n_run, experiment, logger,
+                         run_idx=None, total_runs=None):
     """
     Run a single PyTorch benchmark with specified t_run and n_run.
 
@@ -270,6 +270,8 @@ def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None
     logger.log(f"Steps: {num_steps} (dt={DT}ms)")
     logger.log(f"Experiment: {exp_name}")
 
+    stim_rate = experiment['stim_rate']
+
     timings = {}
     results = {}
 
@@ -277,7 +279,7 @@ def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None
         # ===== Phase 1: ID mappings =====
         t_mapping_start = time()
         flyid2i, i2flyid = get_hash_tables(str(path_comp))
-        exc_indices = [flyid2i[n] for n in neu_exc]
+        exc_indices = [flyid2i[n] for n in experiment['neu_exc']]
         timings['id_mapping'] = time() - t_mapping_start
         logger.log(f"ID mapping:         {timings['id_mapping']:.3f}s")
 
@@ -310,7 +312,7 @@ def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None
 
         # ===== Phase 4: Setup inputs =====
         rates = torch.zeros(n_run, num_neurons, device=device_name)
-        rates[:, exc_indices] = STIM_RATE
+        rates[:, exc_indices] = stim_rate
 
         # ===== Phase 5: Run simulation =====
         logger.log(f"Running simulation ({num_steps} steps, {n_run} trial(s) batched)...")
@@ -453,19 +455,23 @@ def run_single_benchmark(t_run_sec, n_run, logger, run_idx=None, total_runs=None
     return results
 
 
-def run_all_benchmarks(t_run_values=None, n_run_values=None, logger=None):
+def run_all_benchmarks(t_run_values=None, n_run_values=None,
+                       experiment=None, logger=None):
     """
     Run all PyTorch benchmark combinations.
 
     Args:
         t_run_values: List of t_run durations in seconds, or None for all
         n_run_values: List of n_run values to test, or None for all
+        experiment: experiment config dict from get_experiment()
         logger: BenchmarkLogger instance
     """
     if t_run_values is None:
         t_run_values = T_RUN_VALUES_SEC
     if n_run_values is None:
         n_run_values = N_RUN_VALUES
+    if experiment is None:
+        experiment = get_experiment()
 
     device_name = 'cuda' if torch.cuda.is_available() else 'cpu'
     backend_name = f'PyTorch ({device_name.upper()})'
@@ -495,6 +501,7 @@ def run_all_benchmarks(t_run_values=None, n_run_values=None, logger=None):
         result = run_single_benchmark(
             t_run_sec=t_run_sec,
             n_run=n_run,
+            experiment=experiment,
             logger=logger,
             run_idx=run_idx,
             total_runs=total_runs,
