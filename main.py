@@ -18,8 +18,18 @@ Usage:
     python main.py --nestgpu                             # NEST GPU only
     python main.py --brian2-cpu --pytorch --nestgpu      # Brian2 CPU + PyTorch + NEST GPU
 
+    # Export spike activity for external tools (visualizers, analysis scripts)
+    python main.py --pytorch --t_run 0.1 --n_run 1 --export-activity
+
     # Background with log
     nohup python main.py > data/results/benchmarks.log 2>&1 &
+
+Spike data output format (parquet, saved to data/results/<exp_name>.parquet):
+    Columns:
+      - t          (float64) : spike time in milliseconds from simulation start
+      - trial      (int)     : trial index (0-based)
+      - flywire_id (int64)   : FlyWire root ID of the spiking neuron
+      - exp_name   (str)     : experiment identifier string
 """
 
 import os
@@ -66,6 +76,12 @@ def main():
                         help='Run PyTorch benchmark')
     parser.add_argument('--nestgpu', action='store_true',
                         help='Run NEST GPU benchmark')
+
+    parser.add_argument('--export-activity', action='store_true',
+                        help='Print the spike-data output path after simulation '
+                             'for consumption by external tools. '
+                             'Output format: parquet with columns '
+                             '(t, trial, flywire_id, exp_name)')
 
     args = parser.parse_args()
 
@@ -121,6 +137,20 @@ def main():
             experiment=experiment,
             logger=logger,
         )
+
+        # Print the spike output path for external tool consumption
+        if args.export_activity:
+            results_dir = Path('data/results')
+            if results_dir.exists():
+                parquets = sorted(
+                    results_dir.glob('*.parquet'),
+                    key=lambda p: p.stat().st_mtime
+                )
+                if parquets:
+                    path = parquets[-1]
+                    logger.log(f"Exported activity: {path}")
+                    # Machine-readable line for piping to other tools
+                    print(f"ACTIVITY_EXPORT={path}")
 
     finally:
         logger.close()
