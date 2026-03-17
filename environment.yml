@@ -10,6 +10,10 @@ dependencies:
     - brian2cuda==1.0a7
     - torch
     - tqdm
+    - fury
+    - fafbseg
+    - caveclient
+    - navis
   - numpy=1.26.4
   - jupyter
   - ipykernel

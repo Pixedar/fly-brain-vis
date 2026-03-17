@@ -10,3 +10,12 @@ data/results
 # PyTorch cached weight matrices (generated from connectivity data)
 data/weight_coo.pkl
 data/weight_csr.pkl
+
+# Visualizer caches (neuron positions, skeletons, spike data)
+data/cache
+
+# Virtual environment
+venv/
+
+# IDE files
+.idea/

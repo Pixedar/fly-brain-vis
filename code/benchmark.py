@@ -110,7 +110,7 @@ class BenchmarkLogger:
         self.log_file = log_file
         self.file_handle = None
         if log_file:
-            self.file_handle = open(log_file, 'a')
+            self.file_handle = open(log_file, 'a', encoding='utf-8')
 
     def log(self, message, end='\n'):
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -191,7 +191,7 @@ def save_result_csv(backend_name, result):
         existing_rows.append({k: str(v) for k, v in row.items()})
 
     with open(csv_path, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction='ignore')
         writer.writeheader()
         writer.writerows(existing_rows)
 
@@ -217,7 +217,7 @@ def print_summary_table(all_results, backend_name, logger):
 
     for result in all_results:
         t = result.get('timings', {})
-        status_icon = "\u2713" if result['status'] == 'success' else "\u2717"
+        status_icon = "OK" if result['status'] == 'success' else "FAIL"
 
         setup_time = t.get(
             'network_creation_total', t.get('model_setup_total', 0)

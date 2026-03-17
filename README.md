@@ -1,217 +1,113 @@
-# Emulation of the *Drosophila Fly* Brain
+# fly-brain-vis: 3D Neural Activity Visualizer for *Drosophila*
 
-Whole-brain leaky integrate-and-fire model of the adult fruit fly, built from the
-[FlyWire](https://flywire.ai/) connectome (~138k neurons, ~5M synapses).
-Activate and silence arbitrary neurons; observe downstream spike propagation.
+> **This is a visualization companion project based on
+> [eonsystemspbc/fly-brain](https://github.com/eonsystemspbc/fly-brain).**
+> It is **not** the official upstream repository.
+> The core LIF simulation engine, connectome data, and benchmark
+> infrastructure all originate from the upstream project.
 
-Based on the paper
-[*A leaky integrate-and-fire computational model based on the connectome of the
-entire adult Drosophila brain reveals insights into sensorimotor processing*](https://www.biorxiv.org/content/10.1101/2023.05.02.539144v1)
-(Shiu et al.).
+Real-time 3D visualization of whole-brain spike activity in the adult
+fruit fly, rendered with GPU-accelerated gaussian-splat glow effects on
+top of the [FlyWire](https://flywire.ai/) connectome (~138 k neurons,
+~5 M synapses).
 
-## Usage
+## What this adds
 
-With this computational model, one can manipulate the neural activity of a set of _Drosophila_ neurons.
-The output of the model is the spike times and rates of all affected neurons.
-
-Two types of manipulations are currently implemented:
-- *Activation*:
-Neurons can be activated at a fixed frequency to model optogenetic activation.
-This triggers Poisson spiking in the target neurons. 
-Two sets of neurons with distinct frequencies can be defined.
-- *Silencing*:
-In addition to activation, a different set of neurons can be silenced to model optogenetic silencing.
-This sets all synaptic connections to and from those neurons to zero.
-
-The entrypoint is [main.py](main.py), which parses CLI arguments and calls
-[code/benchmark.py](code/benchmark.py) -- the central orchestrator that dispatches
-to framework-specific runners:
-[run_brian2_cuda.py](code/run_brian2_cuda.py),
-[run_pytorch.py](code/run_pytorch.py), and
-[run_nestgpu.py](code/run_nestgpu.py).
-
-```bash
-# Run all 4 frameworks with default durations (0.1s–1000s) and trials (1, 30)
-python main.py
-
-# Specific durations and trial count
-python main.py --t_run 0.1 1 10 --n_run 1
-
-# Single framework
-python main.py --nestgpu --t_run 1 --n_run 1
-
-# Combine frameworks
-python main.py --brian2-cpu --pytorch --t_run 0.1 1 --n_run 1 30
-```
-
-Results are incrementally saved to `data/benchmark-results.csv` as each
-benchmark completes, with separate columns for setup time (loading, compilation)
-and simulation time (the always-on cost).
-
-## Installation
-
-### Conda environment
-
-The `brain-fly` conda environment provides everything needed to run the
-**Brian2**, **Brian2CUDA**, and **PyTorch** backends (including CUDA-enabled
-PyTorch):
-
-```bash
-conda env create -f environment.yml
-conda activate brain-fly
-```
-
-### NEST GPU
-
-NEST GPU requires a separate build from source with a custom neuron model
-(`user_m1`). This is only needed if you want to use the `--nestgpu` backend.
-
-**Prerequisites:**
-
-- **NVIDIA CUDA Toolkit** (12.x) — follow the
-  [official installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/).
-- **CMake** — `sudo apt install cmake` (or see
-  [cmake.org](https://cmake.org/download/)).
-
-**Steps:**
-
-1. Clone NEST GPU:
-
-```bash
-git clone https://github.com/nest/nest-gpu
-```
-
-2. Copy the custom source files into the NEST GPU tree. The files are preserved
-   in `fly-brain-nestgpu/nestgpu_source_files/`:
-
-```bash
-cp nestgpu_source_files/src/user_m1.{h,cu}    /path/to/nest-gpu/src/
-cp nestgpu_source_files/pythonlib/nestgpu.py   /path/to/nest-gpu/pythonlib/
-```
-
-   The patched `nestgpu.py` fixes weight array initialization (lines 2225-2227).
-
-3. Build and install (set `-DCMAKE_CUDA_ARCHITECTURES` to match your GPU, e.g.
-   `89` for RTX 4070):
-
-```bash
-cmake -DCMAKE_CUDA_ARCHITECTURES=89 \
-      -DCMAKE_INSTALL_PREFIX=$HOME/.nest-gpu-build \
-      /path/to/nest-gpu
-make -j$(nproc) && make install
-```
-
-For a full setup from a fresh Windows machine (WSL2 + CUDA + Miniconda), see
-[scripts/setup_WSL_CUDA.sh](scripts/setup_WSL_CUDA.sh).
-
-----
-
-## Frameworks
-
-| Framework | Backend | Status |
-|---|---|---|
-| **Brian2** | C++ standalone (multi-core CPU) | ready |
-| **Brian2CUDA** | CUDA standalone (GPU) | ready |
-| **PyTorch** | CUDA (GPU) | ready |
-| **NEST GPU** | CUDA (GPU, custom `user_m1` neuron) | ready |
-
-All four frameworks share the same data, model parameters, and folder structure.
-A single conda environment (`brain-fly`) plus a system-level NEST GPU install
-runs everything.
-
-## Quickstart
-
-```bash
-# Create the conda environment (includes CUDA-enabled PyTorch)
-conda env create -f environment.yml
-conda activate brain-fly
-
-# Run a 1-second benchmark on all backends
-python main.py --t_run 1 --n_run 1 --no_log_file
-
-# Specific backends (combinable)
-python main.py --brian2-cpu                    # Brian2 CPU only
-python main.py --brian2cuda-gpu               # Brian2CUDA GPU only
-python main.py --pytorch                      # PyTorch only
-python main.py --nestgpu                      # NEST GPU only
-python main.py --pytorch --nestgpu            # PyTorch + NEST GPU
-
-# Full benchmark suite (all durations, n_run=1 then 30, all backends)
-python main.py
-```
-
-### `main.py` options
-
-| Flag | Description |
+| Feature | Description |
 |---|---|
-| *(default)* | Run all: Brian2 (CPU) → Brian2CUDA (GPU) → PyTorch → NEST GPU |
-| `--brian2-cpu` | Brian2 C++ standalone (CPU) only |
-| `--brian2cuda-gpu` | Brian2CUDA (GPU) only |
-| `--pytorch` | PyTorch (GPU/CPU) only |
-| `--nestgpu` | NEST GPU only |
-| `--t_run` | Simulation duration(s) in seconds, e.g. `--t_run 0.1 1 10` |
-| `--n_run` | Number of independent trials, e.g. `--n_run 1 30` |
-| `--log_file FILE` | Write log to file (default: `data/results/benchmarks.log`) |
-| `--no_log_file` | Console output only |
+| **Gaussian-splat neuron glow** | Multi-layer VTK PointGaussianMapper with custom GLSL shaders (aura / bloom / core / hot-white) |
+| **Animated connections** | Synaptic lines flash in sync with presynaptic spikes, modulated by connection weight |
+| **FlyWire anatomical coordinates** | Neuron positions fetched from FlyWire L2 cache and cached locally |
+| **Free camera** | Rotate, zoom, and pan with mouse; keyboard speed/pause controls |
+| **`--visualize` flag** | One command: `python main.py --pytorch --t_run 0.1 --n_run 1 --visualize` |
+| **`--export-activity`** | Machine-readable spike output path for external tool consumption |
 
-Backend flags are combinable: `--brian2-cpu --pytorch` runs Brian2 CPU then PyTorch.
+## Quick start
 
-## Project structure
+```bash
+# 1. Install dependencies (adds fury, fafbseg, navis on top of upstream env)
+conda env create -f environment.yml
+conda activate brain-fly
+
+# 2. Run simulation + launch visualizer
+python main.py --pytorch --t_run 0.1 --n_run 1 --no_log_file --visualize
+
+# 3. Or visualize existing spike data standalone
+python code/visualizer/run.py --spikes data/results/pytorch_t0.1s_n1.parquet
+```
+
+### Visualizer controls
+
+| Input | Action |
+|---|---|
+| Left mouse | Rotate |
+| Right mouse | Zoom |
+| Middle mouse | Pan |
+| Space | Pause / Resume |
+| R | Reset playback |
+| +/- | Speed up / down |
+| Q | Quit |
+
+## Upstream integration
+
+This fork includes a minimal `proposal/export-activity` branch that adds
+only a `--export-activity` flag and documents the spike output schema.
+That branch is intended as a clean, low-friction pull request to the
+upstream repository -- it changes nothing about the simulation, only adds
+discoverability for the existing spike export so external tools can
+consume it.
+
+## Architecture
 
 ```
-fly-brain/
-├── main.py                     # Entrypoint (benchmark runner CLI)
-├── environment.yml             # Conda env definition (brain-fly)
+fly-brain-vis/
+├── main.py                     # CLI: simulation + optional --visualize
 ├── code/
-│   ├── benchmark.py            # Orchestrator: config, logging, dispatcher
-│   ├── run_brian2_cuda.py      # Brian2 / Brian2CUDA benchmark runner
-│   ├── run_pytorch.py          # PyTorch benchmark runner (model + utils)
-│   ├── run_nestgpu.py          # NEST GPU benchmark runner (subprocess per trial)
-│   └── paper-brian2/           # Original paper code (not used by benchmarks)
-│       ├── model.py            # Core LIF network model (Brian2)
-│       ├── utils.py            # Analysis helpers (load_exps, get_rate)
-│       ├── example.ipynb       # Tutorial: activation, silencing, rate analysis
-│       └── figures.ipynb       # Reproduce paper figures (uses archive 630 data)
+│   ├── benchmark.py            # Simulation orchestrator (from upstream)
+│   ├── run_pytorch.py          # PyTorch LIF backend (from upstream)
+│   ├── run_brian2_cuda.py      # Brian2/Brian2CUDA backend (from upstream)
+│   ├── run_nestgpu.py          # NEST GPU backend (from upstream)
+│   └── visualizer/             # << new: 3D visualization module
+│       ├── __init__.py
+│       ├── run.py              # Entry point / CLI
+│       ├── renderer.py         # FURY/VTK gaussian-splat renderer
+│       ├── spike_player.py     # Spike data playback engine
+│       └── fetch_geometry.py   # FlyWire position/skeleton fetcher + cache
 ├── data/
-│   ├── 2025_Completeness_783.csv       # Neuron list (FlyWire v783)
-│   ├── 2025_Connectivity_783.parquet   # Synapse connectivity (FlyWire v783)
-│   ├── benchmark-results.csv       # Accumulated benchmark timings
-│   ├── sez_neurons.pickle              # SEZ neuron subset (for figures)
-│   ├── weight_coo.pkl                  # Cached sparse weights COO (gitignored)
-│   ├── weight_csr.pkl                  # Cached sparse weights CSR (gitignored)
-│   ├── archive/
-│   │   ├── 2023_Completeness_630.csv   # Legacy v630 data
-│   │   └── 2023_Connectivity_630.parquet
-└── scripts/
-    └── setup_WSL_CUDA.sh       # WSL2 + CUDA + Miniconda setup
+│   ├── 2025_Completeness_783.csv
+│   ├── 2025_Connectivity_783.parquet
+│   └── cache/                  # Auto-generated position/skeleton caches
+└── environment.yml             # Conda env (upstream + visualization deps)
 ```
 
-## Data
+## Original simulation documentation
 
-The model uses FlyWire connectome data version **783** (public release).
-Legacy version 630 data is kept in `data/archive/` for paper figure reproduction.
+The core simulation engine is documented in the upstream repository:
+**[eonsystemspbc/fly-brain](https://github.com/eonsystemspbc/fly-brain)**
 
-| File | Description | Size |
-|---|---|---|
-| `2025_Completeness_783.csv` | Neuron IDs and metadata | 3.2 MB |
-| `2025_Connectivity_783.parquet` | Pre/post-synaptic indices + weights | 97 MB |
-| `weight_coo.pkl` | Sparse weight matrix (COO), auto-generated by PyTorch | ~288 MB |
-| `weight_csr.pkl` | Sparse weight matrix (CSR), auto-generated by PyTorch | ~289 MB |
+All four simulation backends (Brian2, Brian2CUDA, PyTorch, NEST GPU),
+the connectome data, experiment definitions, and benchmark infrastructure
+are maintained upstream. See the upstream README for full simulation
+documentation, installation of NEST GPU, system requirements, and
+benchmark results.
 
-## Architecture per framework
+### Simulation quick reference
 
-| | Brian2 / Brian2CUDA | PyTorch | NEST GPU |
-|---|---|---|---|
-| Build step | C++ / CUDA codegen + compile | None (eager mode) | None |
-| Trial parallelism | Sequential (`device.run`) | Batched (`batch_size=n_run`) | Subprocess per trial (cannot reset in-process) |
-| Weight format | Brian2 `Synapses` object | Sparse CSR tensor | Array-based `Connect` |
-| Neuron model | Brian2 equations | Custom `nn.Module` classes | Custom CUDA kernel (`user_m1`) |
-| Timestep | 0.1 ms | 0.1 ms | 0.1 ms |
+```bash
+# Run all backends with default settings
+python main.py
 
-## System requirements
+# Single backend, specific duration
+python main.py --pytorch --t_run 1 --n_run 1
 
-- Linux (tested on Ubuntu 22.04 under WSL2 on Windows 11)
-- NVIDIA GPU with CUDA 12.x (tested on RTX 4070)
-- Miniconda / Anaconda
-- NEST GPU compiled from source (for `--nestgpu` backend)
-- `scripts/setup_WSL_CUDA.sh` documents the full setup from a fresh Windows machine
+# Export spike data for external tools
+python main.py --pytorch --t_run 0.1 --n_run 1 --export-activity
+```
+
+Spike output format (parquet): columns `t` (ms), `trial`, `flywire_id`, `exp_name`.
+
+## License
+
+This project inherits its license from the upstream repository.
+See [eonsystemspbc/fly-brain](https://github.com/eonsystemspbc/fly-brain)
+for details.

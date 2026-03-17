@@ -21,6 +21,9 @@ Usage:
     # Export spike activity for external tools (visualizers, analysis scripts)
     python main.py --pytorch --t_run 0.1 --n_run 1 --export-activity
 
+    # Launch 3D visualizer after simulation
+    python main.py --pytorch --t_run 0.1 --n_run 1 --visualize
+
     # Background with log
     nohup python main.py > data/results/benchmarks.log 2>&1 &
 
@@ -83,6 +86,18 @@ def main():
                              'Output format: parquet with columns '
                              '(t, trial, flywire_id, exp_name)')
 
+    parser.add_argument('--visualize', action='store_true',
+                        help='Launch 3D visualizer after simulation')
+    parser.add_argument('--viz-subset', type=str, default=None,
+                        help='Neuron subset for visualizer: "active", "active_N", '
+                             'or experiment name. Default: all spiking neurons')
+    parser.add_argument('--viz-connections', action='store_true',
+                        help='Show synapse connections in visualizer')
+    parser.add_argument('--viz-skeletons', action='store_true',
+                        help='Fetch neuron skeletons (subset mode, max 500)')
+    parser.add_argument('--viz-token', type=str, default=None,
+                        help='FlyWire API token for fetching neuron geometry')
+
     args = parser.parse_args()
 
     # If no backend flags specified, run all
@@ -130,7 +145,7 @@ def main():
         logger.log(f"n_run values: {args.n_run or [1, 30]}")
         logger.log(f"Log file: {log_file if log_file else 'disabled'}")
 
-        run_benchmarks(
+        all_results = run_benchmarks(
             backends=backends,
             t_run_values=t_run_values,
             n_run_values=args.n_run,
@@ -151,6 +166,32 @@ def main():
                     logger.log(f"Exported activity: {path}")
                     # Machine-readable line for piping to other tools
                     print(f"ACTIVITY_EXPORT={path}")
+
+        # Launch 3D visualizer if requested
+        if args.visualize:
+            logger.log("Launching 3D visualizer...")
+            results_dir = Path('data/results')
+            parquets = sorted(
+                results_dir.glob('*.parquet'),
+                key=lambda p: p.stat().st_mtime
+            ) if results_dir.exists() else []
+
+            if parquets:
+                spike_path = str(parquets[-1])
+                logger.log(f"Visualizing: {spike_path}")
+
+                sys.path.insert(0, str(Path(__file__).resolve().parent / 'code'))
+                from visualizer.run import launch_visualizer
+                launch_visualizer(
+                    spike_path=spike_path,
+                    experiment=experiment,
+                    subset=args.viz_subset or args.experiment or 'active',
+                    token=args.viz_token,
+                    connections=args.viz_connections,
+                    skeletons=args.viz_skeletons,
+                )
+            else:
+                logger.log("Warning: No spike data found to visualize.")
 
     finally:
         logger.close()
