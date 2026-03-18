@@ -1,5 +1,7 @@
 # fly-brain-vis: 3D Neural Activity Visualizer for *Drosophila*
 
+![Demo](assets/demo.gif)
+
 > **This is a visualization companion project based on
 > [eonsystemspbc/fly-brain](https://github.com/eonsystemspbc/fly-brain).**
 > It is **not** the official upstream repository.
@@ -21,6 +23,31 @@ top of the [FlyWire](https://flywire.ai/) connectome (~138 k neurons,
 | **Free camera** | Rotate, zoom, and pan with mouse; keyboard speed/pause controls |
 | **`--visualize` flag** | One command: `python main.py --pytorch --t_run 0.1 --n_run 1 --visualize` |
 | **`--export-activity`** | Machine-readable spike output path for external tool consumption |
+
+## FlyWire API Token
+
+A FlyWire chunkedgraph token is required to fetch neuron positions.
+Get one at: **https://global.daf-apis.com/auth/api/v1/create_token**
+
+Then set it as an environment variable:
+```bash
+# Linux / macOS
+export FLYWIRE_TOKEN=your_token_here
+
+# Windows (cmd)
+set FLYWIRE_TOKEN=your_token_here
+
+# Windows (PowerShell)
+$env:FLYWIRE_TOKEN = "your_token_here"
+```
+
+Or pass it directly via `--token`:
+```bash
+python code/visualizer/run.py --spikes data/results/pytorch_t0.1s_n1.parquet --token your_token_here
+```
+
+> **Note:** After the first run, neuron positions are cached locally in
+> `data/cache/`. Subsequent runs don't need network access.
 
 ## Quick start
 
