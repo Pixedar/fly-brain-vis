@@ -33,10 +33,6 @@ Then set it as an environment variable:
 ```bash
 # Linux / macOS
 export FLYWIRE_TOKEN=your_token_here
-
-# Windows (cmd)
-set FLYWIRE_TOKEN=your_token_here
-
 # Windows (PowerShell)
 $env:FLYWIRE_TOKEN = "your_token_here"
 ```
@@ -67,13 +63,13 @@ python code/visualizer/run.py --spikes data/results/pytorch_t0.1s_n1.parquet
 
 | Input | Action |
 |---|---|
-| Left mouse | Rotate |
-| Right mouse | Zoom |
-| Middle mouse | Pan |
 | Space | Pause / Resume |
 | R | Reset playback |
 | +/- | Speed up / down |
-| Q | Quit |
+| C | Toggle connections on/off |
+| D | Toggle connection diff mode (highlights sudden activity changes) |
+| Click | Select neuron — shows FlyWire ID, in/out degree, activity |
+| Click again | Highlight pre/post-synaptic partners |
 
 ## Upstream integration
 

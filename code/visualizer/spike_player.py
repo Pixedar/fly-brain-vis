@@ -18,7 +18,7 @@ class SpikePlayer:
     """
 
     def __init__(self, spike_path, neuron_index, trial=0,
-                 time_window_ms=20.0, decay_ms=50.0, playback_speed=1.0,
+                 time_window_ms=20.0, decay_ms=0.0, playback_speed=1.0,
                  dt_ms=16.0):
         """
         Args:
@@ -107,10 +107,23 @@ class SpikePlayer:
 
         return self.get_brightness()
 
-    def get_brightness(self):
-        """Get per-neuron brightness (0..1) based on exponential decay from last spike."""
+    def get_brightness(self, decay_ms=None):
+        """Get per-neuron brightness (0..1) based on exponential decay from last spike.
+
+        Args:
+            decay_ms: optional override for decay time constant.
+                      If None, uses the default self.decay_ms.
+                      If 0, decay is disabled: brightness is 1.0 for any
+                      neuron that spiked within the current time window,
+                      0.0 otherwise (instant on/off).
+        """
+        d = decay_ms if decay_ms is not None else self.decay_ms
         dt = self.current_time_ms - self._last_spike
-        brightness = np.exp(-dt / self.decay_ms)
+        if d <= 0:
+            # No decay: binary on/off within time window
+            brightness = np.where(dt <= self.time_window_ms, 1.0, 0.0)
+        else:
+            brightness = np.exp(-dt / d)
         brightness = np.clip(brightness, 0.0, 1.0)
         return brightness
 

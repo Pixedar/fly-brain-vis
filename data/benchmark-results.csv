@@ -1,3 +1,4 @@
 framework,n_run,t_run,setup_time,build_time,sim_time,total_time,realtime_ratio,spikes,active_neurons,status,timestamp
-PyTorch (CUDA),1,0.1,1.182,0.0,1.796,3.04,0.0557,800,272,success,2026-03-17 20:16:51
-PyTorch (CUDA),1,1.0,1.277,0.0,18.184,19.61,0.055,9428,356,success,2026-03-17 20:18:46
+PyTorch (CUDA),1,0.1,2.403,0.0,1.933,4.453,0.0517,713,252,success,2026-03-18 21:43:09
+PyTorch (CUDA),1,1.0,2.251,0.0,19.134,21.582,0.0523,9450,346,success,2026-03-17 23:58:04
+PyTorch (CUDA),1,10.0,1.201,0.0,238.498,246.617,0.0419,5001897,9680,success,2026-03-17 23:57:22

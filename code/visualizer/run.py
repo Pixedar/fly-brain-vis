@@ -28,7 +28,8 @@ _DATA_DIR = _ROOT_DIR / 'data'
 sys.path.insert(0, str(_CODE_DIR))
 
 
-DEFAULT_TOKEN = "313ed195cd87a8456f806c11daba2435"
+import os as _os
+DEFAULT_TOKEN = _os.environ.get("FLYWIRE_TOKEN", "")
 
 
 def _load_id_mapping(comp_path=None):
@@ -140,7 +141,9 @@ def _load_connectivity(subset_ids=None):
 
 
 def launch_visualizer(spike_path, experiment=None, subset=None,
-                      token=None, connections=False, skeletons=False):
+                      token=None, connections=False, skeletons=False,
+                      performance=False, decay_ms=None, white_gain=None,
+                      conn_diff=False):
     """Launch the 3D brain visualizer.
 
     Args:
@@ -150,17 +153,38 @@ def launch_visualizer(spike_path, experiment=None, subset=None,
         token: FlyWire API token
         connections: whether to render synapse connections
         skeletons: whether to fetch and render neuron skeletons (subset mode only)
+        performance: use fewer splat layers + optimized updates for large neuron counts
+        decay_ms: override global DECAY_MS (None = use renderer.DECAY_MS)
+        white_gain: override WHITE_GAIN (None = use renderer.WHITE_GAIN)
     """
     try:
         from .fetch_geometry import fetch_neuron_positions, fetch_skeletons, setup_flywire_token
         from .spike_player import SpikePlayer
-        from .renderer import BrainRenderer
+        from .renderer import BrainRenderer, DECAY_MS as _DEFAULT_DECAY
     except ImportError:
         from fetch_geometry import fetch_neuron_positions, fetch_skeletons, setup_flywire_token
         from spike_player import SpikePlayer
-        from renderer import BrainRenderer
+        from renderer import BrainRenderer, DECAY_MS as _DEFAULT_DECAY
+
+    if decay_ms is None:
+        decay_ms = _DEFAULT_DECAY
+
+    # Apply overrides at module level before renderer is created
+    if white_gain is not None or conn_diff:
+        _rmod = sys.modules[BrainRenderer.__module__]
+        if white_gain is not None:
+            _rmod.WHITE_GAIN = white_gain
+            print(f"[visualizer] White gain: {white_gain}")
+        if conn_diff:
+            _rmod.CONN_DIFF_MODE = True
+            print("[visualizer] Connection difference mode: ON")
 
     token = token or DEFAULT_TOKEN
+    if not token:
+        print("[visualizer] ERROR: No FlyWire token provided.")
+        print("  Set the FLYWIRE_TOKEN environment variable or pass --token YOUR_TOKEN")
+        print("  Get a token at: https://global.daf-apis.com/auth/api/v1/create_token")
+        sys.exit(1)
 
     # Load neuron ID mappings
     print("[visualizer] Loading neuron ID mappings...")
@@ -202,7 +226,7 @@ def launch_visualizer(spike_path, experiment=None, subset=None,
         spike_path=spike_path,
         neuron_index=flyid2i,  # Use full mapping, renderer will remap
         playback_speed=0.1,    # Slow: 100ms simulation plays over ~10 seconds
-        decay_ms=80.0,         # Longer glow trail for dramatic effect
+        decay_ms=decay_ms,
     )
 
     # Create renderer
@@ -214,6 +238,7 @@ def launch_visualizer(spike_path, experiment=None, subset=None,
         skeletons=skel_data,
         subset_ids=subset_ids,
         neuron_ids=active_ids,
+        performance=performance,
     )
 
     # Launch
@@ -239,6 +264,19 @@ def main():
                         help='Fetch and render neuron skeletons (subset mode, max 500)')
     parser.add_argument('--speed', type=float, default=0.5,
                         help='Initial playback speed (default: 0.5)')
+    parser.add_argument('--performance', action='store_true',
+                        help='Performance mode: fewer splat layers, optimized '
+                             'updates for 100k+ neurons')
+    parser.add_argument('--decay', type=float, default=None,
+                        help='Global brightness decay in ms for neurons AND '
+                             'connections (default: from renderer.DECAY_MS, '
+                             'set to 0 to disable decay entirely)')
+    parser.add_argument('--white-gain', type=float, default=None,
+                        help='White peak gain (0.3=rare white, 1.0=original, '
+                             'default: from renderer.WHITE_GAIN)')
+    parser.add_argument('--conn-diff', action='store_true',
+                        help='Start with connection difference mode ON '
+                             '(highlights sudden activity changes, toggle with D key)')
 
     args = parser.parse_args()
 
@@ -261,6 +299,10 @@ def main():
         token=args.token,
         connections=args.connections,
         skeletons=args.skeletons,
+        performance=args.performance,
+        decay_ms=args.decay,
+        white_gain=args.white_gain,
+        conn_diff=args.conn_diff,
     )
 
 
